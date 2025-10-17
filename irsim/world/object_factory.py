@@ -9,6 +9,7 @@ from irsim.world import (
     RobotAcker,
     RobotDiff,
     RobotOmni,
+    RobotOtter,
     ObstacleAcker,
     ObstacleDiff,
     ObstacleOmni,
@@ -141,6 +142,8 @@ class ObjectFactory:
             return RobotAcker(kinematics=kinematics, **kwargs)
         elif kinematics_name == "omni":
             return RobotOmni(kinematics=kinematics, **kwargs)
+        elif kinematics_name == "otter_usv":
+            return RobotOtter(kinematics=kinematics, **kwargs)
         elif kinematics_name == "static" or kinematics_name is None:
             return ObjectStatic(kinematics=kinematics, role="robot", **kwargs)
         # elif kinematics_name == "rigid3d":

@@ -1,4 +1,3 @@
-
 '''
 This file is the implementation of the kinematics for different robots.
 
@@ -146,3 +145,151 @@ def omni_kinematics(state, velocity, step_time, noise=False, alpha=[0.03, 0, 0, 
 
     return new_position
 
+
+def otter_usv_kinematics(
+    state, 
+    velocity, 
+    step_time, 
+    otter_dynamics=None,
+    noise=False, 
+    alpha=[0.03, 0, 0, 0.03]
+):
+    """
+    Calculate the next state for an Otter USV using full 6-DOF dynamics with velocity controller.
+    
+    This implements the Maritime Robotics Otter USV model from:
+    T. I. Fossen (2021). Handbook of Marine Craft Hydrodynamics and Motion Control. 2nd Edition, Wiley.
+    
+    Args:
+        state: Extended state vector [x, y, psi, u, v, r, u_actual1, u_actual2] (8x1)
+            - [x, y, psi]: Position and heading (m, m, rad)
+            - [u, v, r]: Body-fixed velocities (m/s, m/s, rad/s)
+            - [u_actual1, u_actual2]: Propeller states (rad/s)
+        velocity: Desired velocity commands [u_ref, r_ref] (2x1)
+            - u_ref: desired surge velocity (m/s)
+            - r_ref: desired yaw rate (rad/s)
+        step_time: Time step for simulation (s)
+        otter_dynamics: Dictionary containing Otter dynamics object and states
+            - 'otter': otter vehicle object from Python Vehicle Simulator
+            - 'eta': 6-DOF position/orientation state
+            - 'nu': 6-DOF velocity state
+            If None, uses simplified kinematics without full dynamics
+        noise: Boolean indicating whether to add noise to the velocity (default False)
+        alpha: Noise parameters for velocity model (default [0.03, 0, 0, 0.03])
+    
+    Returns:
+        next_state: Updated state vector (8x1) with same structure as input state
+        
+    Note:
+        - For IR-SIM integration, only [x, y, psi] are used for visualization
+        - Full state is maintained for accurate dynamics simulation
+        - If otter_dynamics is None, falls back to differential kinematics
+    """
+    
+    # Validate state dimensions
+    if state.shape[0] < 3:
+        raise ValueError(f"State must have at least 3 dimensions, got {state.shape[0]}")
+    
+    if velocity.shape[0] < 2:
+        raise ValueError(f"Velocity must have 2 dimensions, got {velocity.shape[0]}")
+    
+    # If otter_dynamics not provided, use simplified differential kinematics
+    if otter_dynamics is None:
+        # Simple kinematic model without full dynamics
+        if state.shape[0] < 6:
+            # Initialize extended state if needed
+            next_state = np.zeros((8, 1))
+            next_state[0:3] = state[0:3]
+        else:
+            next_state = state.copy()
+        
+        # Apply velocity commands directly (simplified)
+        u_ref = velocity[0, 0]
+        r_ref = velocity[1, 0]
+        
+        if noise:
+            std_linear = np.sqrt(
+                alpha[0] * (u_ref ** 2) + alpha[1] * (r_ref ** 2)
+            )
+            std_angular = np.sqrt(
+                alpha[2] * (u_ref ** 2) + alpha[3] * (r_ref ** 2)
+            )
+            u_ref += np.random.normal(0, std_linear)
+            r_ref += np.random.normal(0, std_angular)
+        
+        # Simple first-order response (no full dynamics)
+        if state.shape[0] >= 6:
+            # Update velocities with simple dynamics
+            tau_u = 2.0  # surge time constant (s)
+            tau_r = 1.0  # yaw time constant (s)
+            
+            next_state[3, 0] += (u_ref - state[3, 0]) / tau_u * step_time  # u
+            next_state[4, 0] = 0.0  # v (sway)
+            next_state[5, 0] += (r_ref - state[5, 0]) / tau_r * step_time  # r
+        else:
+            # Use commands directly
+            next_state[3, 0] = u_ref
+            next_state[4, 0] = 0.0
+            next_state[5, 0] = r_ref
+        
+        # Update position using current velocities
+        psi = state[2, 0]
+        u = next_state[3, 0]
+        v = next_state[4, 0]
+        r = next_state[5, 0]
+        
+        next_state[0, 0] = state[0, 0] + (u * cos(psi) - v * sin(psi)) * step_time
+        next_state[1, 0] = state[1, 0] + (u * sin(psi) + v * cos(psi)) * step_time
+        next_state[2, 0] = state[2, 0] + r * step_time
+        next_state[2, 0] = WrapToPi(next_state[2, 0])
+        
+        return next_state
+    
+    # Full Otter USV dynamics with Python Vehicle Simulator
+    otter = otter_dynamics['otter']
+    eta = otter_dynamics['eta']  # 6-DOF position/orientation
+    nu = otter_dynamics['nu']    # 6-DOF velocities
+    u_actual = otter_dynamics.get('u_actual', np.zeros(2))  # Propeller states
+    
+    # Extract velocity commands
+    u_ref = velocity[0, 0]
+    r_ref = velocity[1, 0]
+    
+    # Apply noise if requested
+    if noise:
+        std_linear = np.sqrt(alpha[0] * (u_ref ** 2) + alpha[1] * (r_ref ** 2))
+        std_angular = np.sqrt(alpha[2] * (u_ref ** 2) + alpha[3] * (r_ref ** 2))
+        u_ref += np.random.normal(0, std_linear)
+        r_ref += np.random.normal(0, std_angular)
+    
+    # Otter velocity controller
+    u_control = otter.velocityControl(nu, u_ref, r_ref, step_time)
+    
+    # Otter dynamics (6-DOF)
+    [nu_next, u_actual_next] = otter.dynamics(eta, nu, u_actual, u_control, step_time)
+    
+    # Update position using kinematic equations
+    # For surface vessel: z=0, phi=0, theta=0, w=0, p=0, q=0
+    eta_next = eta.copy()
+    eta_next[0] += step_time * (nu_next[0] * np.cos(eta[5]) - nu_next[1] * np.sin(eta[5]))
+    eta_next[1] += step_time * (nu_next[0] * np.sin(eta[5]) + nu_next[1] * np.cos(eta[5]))
+    eta_next[5] += step_time * nu_next[5]
+    eta_next[5] = WrapToPi(eta_next[5])
+    
+    # Update otter_dynamics for next iteration
+    otter_dynamics['eta'] = eta_next
+    otter_dynamics['nu'] = nu_next
+    otter_dynamics['u_actual'] = u_actual_next
+    
+    # Pack into extended state for IR-SIM
+    next_state = np.zeros((8, 1))
+    next_state[0, 0] = eta_next[0]  # x
+    next_state[1, 0] = eta_next[1]  # y
+    next_state[2, 0] = eta_next[5]  # psi
+    next_state[3, 0] = nu_next[0]   # u
+    next_state[4, 0] = nu_next[1]   # v
+    next_state[5, 0] = nu_next[5]   # r
+    next_state[6, 0] = u_actual_next[0]  # n1
+    next_state[7, 0] = u_actual_next[1]  # n2
+    
+    return next_state

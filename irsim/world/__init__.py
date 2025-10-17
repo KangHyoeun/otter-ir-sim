@@ -6,6 +6,7 @@ from irsim.world.object_base import ObjectBase
 from irsim.world.robots.robot_diff import RobotDiff
 from irsim.world.robots.robot_acker import RobotAcker
 from irsim.world.robots.robot_omni import RobotOmni
+from irsim.world.robots.robot_otter import RobotOtter
 
 # from irsim.world.object_base_3d import ObjectBase3D
 # from irsim.world.robots.robot_rigid3d import RobotRigid3D

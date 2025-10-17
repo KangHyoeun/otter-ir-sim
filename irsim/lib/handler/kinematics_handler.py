@@ -4,6 +4,7 @@ from irsim.lib.algorithm.kinematics import (
     differential_kinematics,
     ackermann_kinematics,
     omni_kinematics,
+    otter_usv_kinematics,
 )
 
 
@@ -101,6 +102,39 @@ class AckermannKinematics(KinematicsHandler):
         return next_state
 
 
+class OtterUSVKinematics(KinematicsHandler):
+    """
+    Kinematics handler for Otter USV with full 6-DOF dynamics.
+    """
+
+    def __init__(
+        self,
+        name,
+        noise: bool = False,
+        alpha: list = None,
+        otter_dynamics: dict = None,
+    ):
+        super().__init__(name, noise, alpha)
+        self.otter_dynamics = otter_dynamics
+
+    def step(
+        self, state: np.ndarray, velocity: np.ndarray, step_time: float
+    ) -> np.ndarray:
+        next_state = otter_usv_kinematics(
+            state,
+            velocity,
+            step_time,
+            self.otter_dynamics,
+            self.noise,
+            self.alpha,
+        )
+        return next_state
+    
+    def set_otter_dynamics(self, otter_dynamics: dict):
+        """Update otter dynamics reference."""
+        self.otter_dynamics = otter_dynamics
+
+
 # class Rigid3DKinematics(KinematicsHandler):
 
 #     def __init__(self, name, noise, alpha):
@@ -124,6 +158,7 @@ class KinematicsFactory:
         mode: str = "steer",
         wheelbase: float = None,
         role: str = "robot",
+        otter_dynamics: dict = None,
     ) -> KinematicsHandler:
         name = name.lower() if name else None
         if name == "omni":
@@ -132,6 +167,8 @@ class KinematicsFactory:
             return DifferentialKinematics(name, noise, alpha)
         elif name == "acker":
             return AckermannKinematics(name, noise, alpha, mode, wheelbase)
+        elif name == "otter_usv":
+            return OtterUSVKinematics(name, noise, alpha, otter_dynamics)
         # elif name == 'rigid3d':
         #     return Rigid3DKinematics(name, noise, alpha)
         else:
