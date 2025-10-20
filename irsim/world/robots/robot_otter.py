@@ -15,7 +15,6 @@ Author: Integration for IR-SIM
 Date: 2025-10-17
 """
 
-import sys
 import numpy as np
 from irsim.world import ObjectBase
 
@@ -101,6 +100,10 @@ class RobotOtter(ObjectBase):
         self._current_u = 0.0  # surge velocity
         self._current_v = 0.0  # sway velocity
         self._current_r = 0.0  # yaw rate
+        
+        # Store last commanded velocities for plotting
+        self._last_u_ref = 0.0
+        self._last_r_ref = 0.0
     
     def _init_otter_dynamics_pre(self):
         """
@@ -164,7 +167,9 @@ class RobotOtter(ObjectBase):
         show_goal = self.plot_kwargs.get("show_goal", True)
         show_arrow = self.plot_kwargs.get("show_arrow", True)
         show_trajectory = self.plot_kwargs.get("show_trajectory", False)
+        show_velocity_text = self.plot_kwargs.get("show_velocity_text", True)
         
+        # Call parent _init_plot
         super()._init_plot(
             ax, 
             show_goal=show_goal, 
@@ -172,6 +177,117 @@ class RobotOtter(ObjectBase):
             show_trajectory=show_trajectory,
             **kwargs
         )
+        
+        # Initialize velocity text at origin (will be moved in _step_plot)
+        if show_velocity_text:
+            text_color = kwargs.get('velocity_text_color', 'blue')
+            text_size = kwargs.get('velocity_text_size', 8)
+            text_zorder = kwargs.get('velocity_text_zorder', 5)
+            
+            vel_text = ax.text(
+                0, -0.8, "Initializing...",
+                fontsize=text_size,
+                color=text_color,
+                ha='center',
+                va='top',
+                zorder=text_zorder,
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7)
+            )
+            
+            self.plot_text_list.append(vel_text)
+            self.velocity_text = vel_text
+    
+    def _step_plot(self, **kwargs):
+        """
+        Override _step_plot to include velocity text visualization.
+        
+        Args:
+            **kwargs: Additional plotting options
+        """
+        # Call parent _step_plot first
+        super()._step_plot(**kwargs)
+        
+        # Update velocity text if it exists
+        if hasattr(self, 'velocity_text') and self.plot_kwargs.get('show_velocity_text', True):
+            if self.state.shape[0] >= 6:
+                x = self.state[0, 0]
+                y = self.state[1, 0]
+                u_actual = self.state[3, 0]
+                r_actual = self.state[5, 0]
+                
+                # Get desired velocities
+                u_ref = getattr(self, '_last_u_ref', 0.0)
+                r_ref = getattr(self, '_last_r_ref', 0.0)
+                
+                # Update text content
+                text_str = (
+                    f"Cmd: u={u_ref:.2f}, r={np.rad2deg(r_ref):.1f}\u00b0/s\n"
+                    f"Act: u={u_actual:.2f}, r={np.rad2deg(r_actual):.1f}\u00b0/s"
+                )
+                self.velocity_text.set_text(text_str)
+                
+                # Update text position (below the robot)
+                text_y = y - 0.8
+                self.velocity_text.set_position((x, text_y))
+                
+                # Update text color if provided in kwargs
+                if 'velocity_text_color' in kwargs:
+                    self.velocity_text.set_color(kwargs['velocity_text_color'])
+                if 'velocity_text_size' in kwargs:
+                    self.velocity_text.set_fontsize(kwargs['velocity_text_size'])
+    
+    def plot_velocity_text(self, ax, state, **kwargs):
+        """
+        Plot velocity tracking information as text.
+        
+        Displays:
+        - u_ref, r_ref: Desired velocities
+        - u, r: Actual velocities
+        
+        Args:
+            ax: Matplotlib axis object
+            state: Current state [x, y, psi, u, v, r, n1, n2]
+            **kwargs: Additional plotting options
+        """
+        if state.shape[0] < 6:
+            return  # Not enough state information
+        
+        x = state[0, 0]
+        y = state[1, 0]
+        u_actual = state[3, 0]
+        r_actual = state[5, 0]
+        
+        # Get desired velocities from last action (if available)
+        u_ref = getattr(self, '_last_u_ref', 0.0)
+        r_ref = getattr(self, '_last_r_ref', 0.0)
+        
+        # Text position (below the robot)
+        text_x = x
+        text_y = y - 0.8
+        
+        # Format text
+        text_color = kwargs.get('velocity_text_color', 'blue')
+        text_size = kwargs.get('velocity_text_size', 8)
+        text_zorder = kwargs.get('velocity_text_zorder', 5)
+        
+        text_str = (
+            f"Cmd: u={u_ref:.2f}, r={np.rad2deg(r_ref):.1f}°/s\n"
+            f"Act: u={u_actual:.2f}, r={np.rad2deg(r_actual):.1f}°/s"
+        )
+        
+        # Create text
+        vel_text = ax.text(
+            text_x, text_y, text_str,
+            fontsize=text_size,
+            color=text_color,
+            ha='center',
+            va='top',
+            zorder=text_zorder,
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7)
+        )
+        
+        self.plot_text_list.append(vel_text)
+        self.velocity_text = vel_text
     
     def step(self, action=None):
         """
@@ -180,6 +296,15 @@ class RobotOtter(ObjectBase):
         Args:
             action: Velocity commands [u_ref, r_ref] or None for behavior-based control
         """
+        # Store action for velocity tracking plot
+        if action is not None and action.shape[0] >= 2:
+            self._last_u_ref = action[0, 0]
+            self._last_r_ref = action[1, 0]
+        else:
+            # If no action, use current velocity as reference (for behavior-based control)
+            self._last_u_ref = self.state[3, 0] if self.state.shape[0] >= 4 else 0.0
+            self._last_r_ref = self.state[5, 0] if self.state.shape[0] >= 6 else 0.0
+        
         # Update otter_dynamics with current state before kinematics
         if self.use_full_dynamics and self.otter_dynamics is not None:
             self._update_otter_from_state()

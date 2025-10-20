@@ -146,14 +146,7 @@ def omni_kinematics(state, velocity, step_time, noise=False, alpha=[0.03, 0, 0, 
     return new_position
 
 
-def otter_usv_kinematics(
-    state, 
-    velocity, 
-    step_time, 
-    otter_dynamics=None,
-    noise=False, 
-    alpha=[0.03, 0, 0, 0.03]
-):
+def otter_usv_kinematics(state, velocity, step_time, otter_dynamics=None, noise=False, alpha=[0.03, 0, 0, 0.03]):   
     """
     Calculate the next state for an Otter USV using full 6-DOF dynamics with velocity controller.
     
@@ -292,4 +285,4 @@ def otter_usv_kinematics(
     next_state[6, 0] = u_actual_next[0]  # n1
     next_state[7, 0] = u_actual_next[1]  # n2
     
-    return next_state
+    return next_state 
