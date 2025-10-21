@@ -381,6 +381,11 @@ class ObjectBase:
         else:
             self.pre_process()
             behavior_vel = self.gen_behavior_vel(velocity)
+            
+            # Store commanded velocities for velocity text display
+            if behavior_vel is not None and behavior_vel.shape[0] >= 2:
+                self.set_commanded_velocities(behavior_vel[0, 0], behavior_vel[1, 0])
+            
             new_state = self.kf.step(self.state, behavior_vel, world_param.step_time)
             next_state = self.mid_process(new_state)
 
@@ -1053,6 +1058,30 @@ class ObjectBase:
 
         if show_text:
             self.plot_text(ax, state, **self.plot_kwargs)
+        
+        # Add velocity text if requested
+        if self.plot_kwargs.get("show_velocity_text", False):
+            self.plot_text(
+                ax, state, 
+                text_type="velocity",
+                text_position=[0, -0.8],
+                text_color=self.plot_kwargs.get("velocity_text_color", "blue"),
+                text_size=self.plot_kwargs.get("velocity_text_size", 8),
+                text_zorder=self.plot_kwargs.get("velocity_text_zorder", 5),
+                **self.plot_kwargs
+            )
+        
+        # Add state text if requested
+        if self.plot_kwargs.get("show_state_text", False):
+            self.plot_text(
+                ax, state,
+                text_type="state", 
+                text_position=[0, -1.2],
+                text_color=self.plot_kwargs.get("state_text_color", "green"),
+                text_size=self.plot_kwargs.get("state_text_size", 8),
+                text_zorder=self.plot_kwargs.get("state_text_zorder", 5),
+                **self.plot_kwargs
+            )
 
         if show_arrow:
             current_velocity = self.velocity_xy if np.any(state) else np.zeros((2, 1))
@@ -1345,6 +1374,50 @@ class ObjectBase:
 
             if "text_zorder" in kwargs:
                 text.set_zorder(kwargs["text_zorder"])
+        
+        # Update velocity text if it exists
+        if hasattr(self, "velocity_text"):
+            text = self.velocity_text
+            text_position = kwargs.get("velocity_text_position", [0, -0.8])
+            
+            # Update text content
+            new_content = self._get_velocity_text(self.state)
+            text.set_text(new_content)
+            
+            # Update position
+            text.set_position((x + text_position[0], y + text_position[1]))
+            
+            # Update text properties
+            if "velocity_text_color" in kwargs:
+                text.set_color(kwargs["velocity_text_color"])
+            if "velocity_text_size" in kwargs:
+                text.set_fontsize(kwargs["velocity_text_size"])
+            if "velocity_text_alpha" in kwargs:
+                text.set_alpha(kwargs["velocity_text_alpha"])
+            if "velocity_text_zorder" in kwargs:
+                text.set_zorder(kwargs["velocity_text_zorder"])
+        
+        # Update state text if it exists
+        if hasattr(self, "state_text"):
+            text = self.state_text
+            text_position = kwargs.get("state_text_position", [0, -1.2])
+            
+            # Update text content
+            new_content = self._get_state_text(self.state)
+            text.set_text(new_content)
+            
+            # Update position
+            text.set_position((x + text_position[0], y + text_position[1]))
+            
+            # Update text properties
+            if "state_text_color" in kwargs:
+                text.set_color(kwargs["state_text_color"])
+            if "state_text_size" in kwargs:
+                text.set_fontsize(kwargs["state_text_size"])
+            if "state_text_alpha" in kwargs:
+                text.set_alpha(kwargs["state_text_alpha"])
+            if "state_text_zorder" in kwargs:
+                text.set_zorder(kwargs["state_text_zorder"])
 
         # Handle trail plotting (creates new elements each time)
         if self.show_trail and world_param.count % self.trail_freq == 0:
@@ -1626,24 +1699,52 @@ class ObjectBase:
 
     def plot_text(self, ax, state: Optional[np.ndarray] = None, **kwargs):
         """
-        Plot the text label of the object at the specified position.
+        Plot text information for the object at the specified position.
 
         Args:
             ax: Matplotlib axis.
             state: State of the object (x, y, r_phi) to determine text position.
                    If None, uses the object's current state. Defaults to None.
             **kwargs: Additional plotting options.
+                text_type (str): Type of text to display. Options:
+                    - 'abbr': Object abbreviation (default)
+                    - 'velocity': Velocity information (u, v, r)
+                    - 'state': Full state information
+                    - 'custom': Custom text from text_content parameter
                 text_color (str): Color of the text, default is 'k'.
                 text_size (int): Font size of the text, default is 10.
                 text_position (list): Position offset from object center [dx, dy],
                                     default is [-radius-0.1, radius+0.1].
                 text_zorder (int): Zorder of the text. Defaults to 2.
                 text_alpha (float): Transparency of the text. Defaults to 1.
+                text_content (str): Custom text content (for text_type='custom').
+                show_velocity_text (bool): Whether to show velocity text (for backward compatibility).
         """
 
         if state is None:
             state = self.state
 
+        # Get text type and content
+        text_type = kwargs.get("text_type", "abbr")
+        show_velocity_text = kwargs.get("show_velocity_text", False)
+        
+        # Backward compatibility: if show_velocity_text is True, use velocity type
+        if show_velocity_text:
+            text_type = "velocity"
+        
+        # Determine text content based on type
+        if text_type == "abbr":
+            text_content = self.abbr
+        elif text_type == "velocity":
+            text_content = self._get_velocity_text(state)
+        elif text_type == "state":
+            text_content = self._get_state_text(state)
+        elif text_type == "custom":
+            text_content = kwargs.get("text_content", "")
+        else:
+            text_content = self.abbr
+
+        # Get text styling
         text_color = kwargs.get("text_color", "k")
         text_size = kwargs.get("text_size", 10)
         text_position = kwargs.get(
@@ -1659,7 +1760,7 @@ class ObjectBase:
                 x + text_position[0],
                 y + text_position[1],
                 self.z,
-                self.abbr,
+                text_content,
                 fontsize=text_size,
                 color=text_color,
                 zorder=text_zorder,
@@ -1669,7 +1770,7 @@ class ObjectBase:
             text = ax.text(
                 x + text_position[0],
                 y + text_position[1],
-                self.abbr,
+                text_content,
                 fontsize=text_size,
                 color=text_color,
                 zorder=text_zorder,
@@ -1677,7 +1778,100 @@ class ObjectBase:
             )
 
         self.plot_text_list.append(text)
-        self.abbr_text = text
+        
+        # Store reference based on text type
+        if text_type == "abbr":
+            self.abbr_text = text
+        elif text_type == "velocity":
+            self.velocity_text = text
+        elif text_type == "state":
+            self.state_text = text
+        else:
+            self.custom_text = text
+
+    def _get_velocity_text(self, state):
+        """
+        Generate velocity text content for display.
+        
+        Args:
+            state: Current state vector
+            
+        Returns:
+            str: Formatted velocity text showing both commanded and actual velocities
+        """
+        if state.shape[0] < 3:
+            return "No velocity data"
+        
+        x, y = state[0, 0], state[1, 0]
+        
+        # Get commanded velocities (from last action or stored references)
+        u_ref = getattr(self, '_last_u_ref', 0.0)
+        r_ref = getattr(self, '_last_r_ref', 0.0)
+        
+        # Get current velocities
+        if state.shape[0] >= 6:
+            u_actual = state[3, 0]
+            v_actual = state[4, 0] 
+            r_actual = state[5, 0]
+            
+            # Format: Cmd: u=1.50, r=5.7°/s\nAct: u=1.45, r=5.2°/s
+            vel_text = (
+                f"u_ref={u_ref:.2f} m/s, u={u_actual:.2f} m/s\n"
+                f"r_ref={np.rad2deg(r_ref):.1f}°/s, r={np.rad2deg(r_actual):.1f}°/s"
+            )
+        elif state.shape[0] >= 4:
+            u_actual = state[3, 0]
+            vel_text = f"Cmd: u={u_ref:.2f}\nAct: u={u_actual:.2f} m/s"
+        else:
+            # For basic robots, show velocity from velocity property
+            if hasattr(self, 'velocity') and self.velocity is not None:
+                if self.velocity.shape[0] >= 2:
+                    vx, vy = self.velocity[0, 0], self.velocity[1, 0]
+                    speed = np.sqrt(vx**2 + vy**2)
+                    vel_text = f"Cmd: v={u_ref:.2f}\nAct: v={speed:.2f} m/s"
+                else:
+                    vel_text = f"Cmd: v={u_ref:.2f}\nAct: v={self.velocity[0, 0]:.2f} m/s"
+            else:
+                vel_text = f"Cmd: u={u_ref:.2f}\nAct: No data"
+        
+        return vel_text
+    
+    def _get_state_text(self, state):
+        """
+        Generate state text content for display.
+        
+        Args:
+            state: Current state vector
+            
+        Returns:
+            str: Formatted state text
+        """
+        if state.shape[0] < 3:
+            return "Incomplete state"
+        
+        x, y = state[0, 0], state[1, 0]
+        psi = state[2, 0] if state.shape[0] >= 3 else 0
+        
+        state_text = f"x={x:.1f}, y={y:.1f}\nψ={np.rad2deg(psi):.1f}°"
+        
+        if state.shape[0] >= 6:
+            u, v, r = state[3, 0], state[4, 0], state[5, 0]
+            state_text += f"\nu={u:.2f}, v={v:.2f}\nr={np.rad2deg(r):.1f}°/s"
+        
+        return state_text
+
+    def set_commanded_velocities(self, u_ref=None, r_ref=None):
+        """
+        Store commanded velocities for velocity text display.
+        
+        Args:
+            u_ref (float): Commanded surge velocity
+            r_ref (float): Commanded yaw rate
+        """
+        if u_ref is not None:
+            self._last_u_ref = u_ref
+        if r_ref is not None:
+            self._last_r_ref = r_ref
 
     def plot_arrow(
         self,

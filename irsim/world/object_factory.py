@@ -13,6 +13,7 @@ from irsim.world import (
     ObstacleAcker,
     ObstacleDiff,
     ObstacleOmni,
+    ObstacleOtter,
     ObjectStatic,
     ObstacleMap,
     # RobotRigid3D,
@@ -115,6 +116,12 @@ class ObjectFactory:
             obj_dict["sensors"] = convert_list_length_dict(
                 kwargs.get("sensors", None), number
             )[i]
+            
+            # Handle random_shape for Otter USV
+            if "shape" in obj_dict and isinstance(obj_dict["shape"], dict):
+                shape_dict = obj_dict["shape"]
+                if shape_dict.get("random_shape", False):
+                    obj_dict["shape"] = self.generate_random_shape(shape_dict)
 
             if obj_type == "robot":
                 object_list.append(self.create_robot(**obj_dict))
@@ -172,11 +179,13 @@ class ObjectFactory:
             return ObstacleAcker(kinematics=kinematics, **kwargs)
         elif kinematics_name == "omni":
             return ObstacleOmni(kinematics=kinematics, **kwargs)
+        elif kinematics_name == "otter_usv":
+            return ObstacleOtter(kinematics=kinematics, **kwargs)
         elif kinematics_name == "static" or kinematics_name is None:
             return ObjectStatic(kinematics=kinematics, role="obstacle", **kwargs)
         else:
             raise NotImplementedError(
-                f"Robot kinematics {kinematics_name} not implemented"
+                f"Obstacle kinematics {kinematics_name} not implemented"
             )
 
     def generate_state_list(
@@ -262,3 +271,34 @@ class ObjectFactory:
                 goal_list.append([goal_x, goal_y, theta - np.pi])
 
         return state_list, goal_list
+    
+    def generate_random_shape(self, shape_dict):
+        """
+        Generate a random shape based on the shape configuration.
+        
+        Args:
+            shape_dict (dict): Shape configuration with random_shape=True and optional ranges.
+                For rectangle:
+                    - length_range (list): [min, max] for length, default [1.5, 2.5]
+                    - width_range (list): [min, max] for width, default [0.8, 1.3]
+                For circle:
+                    - radius_range (list): [min, max] for radius, default [1.0, 3.0]
+        
+        Returns:
+            dict: Shape configuration with randomized dimensions.
+        """
+        shape_name = shape_dict.get("name", "rectangle")
+        new_shape = {"name": shape_name}
+        
+        if shape_name == "rectangle":
+            length_range = shape_dict.get("length_range", [1.5, 2.5])
+            width_range = shape_dict.get("width_range", [0.8, 1.3])
+            
+            new_shape["length"] = np.random.uniform(length_range[0], length_range[1])
+            new_shape["width"] = np.random.uniform(width_range[0], width_range[1])
+            
+        elif shape_name == "circle":
+            radius_range = shape_dict.get("radius_range", [1.0, 3.0])
+            new_shape["radius"] = np.random.uniform(radius_range[0], radius_range[1])
+        
+        return new_shape

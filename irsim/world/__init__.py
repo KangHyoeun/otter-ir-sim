@@ -14,6 +14,7 @@ from irsim.world.robots.robot_otter import RobotOtter
 from irsim.world.obstacles.obstacle_diff import ObstacleDiff
 from irsim.world.obstacles.obstacle_omni import ObstacleOmni
 from irsim.world.obstacles.obstacle_acker import ObstacleAcker
+from irsim.world.obstacles.obstacle_otter import ObstacleOtter
 
 from irsim.world.map.obstacle_map import ObstacleMap
 from irsim.world.obstacles.obstacle_static import ObjectStatic

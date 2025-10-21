@@ -199,6 +199,80 @@ def beh_acker_dash(ego_object, external_objects, **kwargs):
     return behavior_vel
 
 
+@register_behavior("otter_usv", "rvo")
+def beh_otter_rvo(ego_object, external_objects, **kwargs):
+    """
+    Behavior function for Otter USV using RVO (Reciprocal Velocity Obstacles).
+    
+    Otter USV uses differential drive-like control with [u_ref, r_ref] commands.
+
+    Args:
+        ego_object: The ego robot object.
+        external_objects (list): List of external objects in the environment.
+        **kwargs: Additional keyword arguments:
+            - vxmax (float): Maximum x velocity, default 1.5.
+            - vymax (float): Maximum y velocity, default 1.5.
+            - acce (float): Acceleration factor, default 1.0.
+            - factor (float): Additional scaling factor, default 1.0.
+            - mode (str): RVO calculation mode, default "rvo".
+            - neighbor_threshold (float): Neighbor threshold distance, default 10.0.
+
+    Returns:
+        np.array: Velocity [u_ref, r_ref] (2x1) for Otter USV.
+    """
+
+    if ego_object.goal is None:
+        if world_param.count % 10 == 0:
+            env_param.logger.warning("Goal is currently None. This rvo behavior is waiting for goal configuration")
+        return np.zeros((2, 1))
+
+    rvo_neighbor = [obj.rvo_neighbor_state for obj in external_objects]
+    rvo_state = ego_object.rvo_state
+    vxmax = kwargs.get("vxmax", 5.0)
+    vymax = kwargs.get("vymax", 3.0)
+    acce = kwargs.get("acce", 100.0)
+    factor = kwargs.get("factor", 1.0)
+    mode = kwargs.get("mode", "rvo")
+    neighbor_threshold = kwargs.get("neighbor_threshold", 10.0)
+    behavior_vel = DiffRVO(rvo_state, rvo_neighbor, vxmax, vymax, acce, factor, mode, neighbor_threshold)
+
+    return behavior_vel
+
+
+@register_behavior("otter_usv", "dash")
+def beh_otter_dash(ego_object, external_objects, **kwargs):
+    """
+    Behavior function for Otter USV using dash-to-goal behavior.
+    
+    Otter USV uses differential drive-like control with [u_ref, r_ref] commands.
+
+    Args:
+        ego_object: The ego robot object.
+        external_objects (list): List of external objects in the environment.
+        **kwargs: Additional keyword arguments:
+            - angle_tolerance (float): Allowable angular deviation, default 0.1.
+
+    Returns:
+        np.array: Velocity [u_ref, r_ref] (2x1) for Otter USV.
+    """
+
+    state = ego_object.state
+    goal = ego_object.goal
+    goal_threshold = ego_object.goal_threshold
+    _, max_vel = ego_object.get_vel_range()
+    angle_tolerance = kwargs.get("angle_tolerance", 0.1)
+
+    if goal is None:
+        if world_param.count % 10 == 0:
+            env_param.logger.warning("Goal is currently None. This dash behavior is waiting for goal configuration")
+
+        return np.zeros((2, 1))
+
+    behavior_vel = DiffDash(state, goal, max_vel, goal_threshold, angle_tolerance)
+
+    return behavior_vel
+
+
 def OmniRVO(
     state_tuple,
     neighbor_list=None,
