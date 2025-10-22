@@ -87,8 +87,6 @@ class Behavior:
 
         try:
             importlib.import_module(behaviors, package="irsim.lib.behavior")
-            # Load wander behavior extension
-            importlib.import_module(".behavior_wander", package="irsim.lib.behavior")
         except ImportError as e:
             print(f"Failed to load module '{behaviors}': {e}")
 

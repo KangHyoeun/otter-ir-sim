@@ -91,6 +91,43 @@ class ObstacleOtter(ObjectBase):
         if self.use_full_dynamics and self.otter_dynamics is not None:
             self._update_otter_from_state()
     
+    def set_state(self, state, init=False):
+        """
+        Override set_state to handle dimension mismatch for Otter obstacles.
+        
+        When random_obstacle_position() calls this with 3-DOF state [x, y, theta],
+        we need to pad it to 8-DOF state [x, y, psi, u, v, r, n1, n2].
+        
+        Args:
+            state: State vector (3-DOF from random_obstacle_position or 8-DOF from user)
+            init (bool): Whether to set initial state
+        """
+        if isinstance(state, (list, np.ndarray)):
+            # Handle both (3,) and (3,1) shaped arrays
+            if len(state) == 3:
+                # Pad 3-DOF state to 8-DOF for Otter
+                # [x, y, theta] -> [x, y, psi, u, v, r, n1, n2]
+                # Extract scalar values, handling both (3,) and (3,1) shapes
+                x = float(state[0].item() if hasattr(state[0], 'item') else state[0])
+                y = float(state[1].item() if hasattr(state[1], 'item') else state[1])
+                theta = float(state[2].item() if hasattr(state[2], 'item') else state[2])
+                
+                # Create 8-DOF state as column vector to match ir-sim format
+                padded_state = np.array([[x], [y], [theta], [0], [0], [0], [0], [0]])
+                super().set_state(padded_state, init)
+            elif len(state) == 8:
+                # Use 8-DOF state directly
+                super().set_state(state, init)
+            else:
+                raise ValueError(f"Otter obstacle state must be 3-DOF or 8-DOF, got {len(state)}-DOF")
+        else:
+            # Handle other cases
+            super().set_state(state, init)
+        
+        # Update otter_dynamics if available
+        if self.use_full_dynamics and self.otter_dynamics is not None:
+            self._update_otter_from_state()
+    
     def _init_otter_dynamics_pre(self):
         """
         Pre-initialize the Otter USV dynamics (before parent __init__).

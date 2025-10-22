@@ -210,9 +210,9 @@ def beh_otter_rvo(ego_object, external_objects, **kwargs):
         ego_object: The ego robot object.
         external_objects (list): List of external objects in the environment.
         **kwargs: Additional keyword arguments:
-            - vxmax (float): Maximum x velocity, default 1.5.
-            - vymax (float): Maximum y velocity, default 1.5.
-            - acce (float): Acceleration factor, default 1.0.
+            - vxmax (float): Maximum x velocity, default 10.0.
+            - vymax (float): Maximum y velocity, default 10.0.
+            - acce (float): Acceleration factor, default 100.0.
             - factor (float): Additional scaling factor, default 1.0.
             - mode (str): RVO calculation mode, default "rvo".
             - neighbor_threshold (float): Neighbor threshold distance, default 10.0.
@@ -228,8 +228,8 @@ def beh_otter_rvo(ego_object, external_objects, **kwargs):
 
     rvo_neighbor = [obj.rvo_neighbor_state for obj in external_objects]
     rvo_state = ego_object.rvo_state
-    vxmax = kwargs.get("vxmax", 5.0)
-    vymax = kwargs.get("vymax", 3.0)
+    vxmax = kwargs.get("vxmax", 10.0)
+    vymax = kwargs.get("vymax", 10.0)
     acce = kwargs.get("acce", 100.0)
     factor = kwargs.get("factor", 1.0)
     mode = kwargs.get("mode", "rvo")
