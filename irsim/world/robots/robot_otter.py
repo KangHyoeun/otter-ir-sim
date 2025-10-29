@@ -37,6 +37,8 @@ class RobotOtter(ObjectBase):
     Args:
         kinematics (dict): Kinematics configuration, should include 'name': 'otter_usv'
         use_full_dynamics (bool): Whether to use full 6-DOF dynamics (default True)
+        V_current (float): External current speed (m/s) - default: 0.0
+        beta_current (float): External current direction (deg) - default: 0.0
         **kwargs: Additional arguments passed to ObjectBase
         
     Example:
@@ -45,7 +47,9 @@ class RobotOtter(ObjectBase):
         ...     shape={'name': 'rectangle', 'length': 2.0, 'width': 1.08},
         ...     state=[10, 10, 0],
         ...     velocity=[1.5, 0.2],
-        ...     use_full_dynamics=True
+        ...     use_full_dynamics=True,
+        ...     V_current=1.0,  # 1.0 m/s current
+        ...     beta_current=45  # 45 degrees current direction
         ... )
     """
     
@@ -55,6 +59,8 @@ class RobotOtter(ObjectBase):
         use_full_dynamics=True,
         color="b",
         state_dim=8,  # Extended state for Otter
+        V_current=0.0,  # External current speed (m/s)
+        beta_current=0.0,  # External current direction (deg)
         **kwargs
     ):
         # Set default kinematics if not provided
@@ -69,6 +75,10 @@ class RobotOtter(ObjectBase):
         self.use_full_dynamics = use_full_dynamics
         self.otter_vehicle = None
         self.otter_dynamics = None
+        
+        # Store external disturbance parameters
+        self.V_current = V_current
+        self.beta_current = beta_current
         
         if self.use_full_dynamics:
             self._init_otter_dynamics_pre()
@@ -110,8 +120,14 @@ class RobotOtter(ObjectBase):
         Pre-initialize the Otter USV dynamics (before parent __init__).
         """
         try:
-            # Create Otter vehicle with velocity controller
-            self.otter_vehicle = OtterVehicle('velocityControl', r=1.5)
+            # Create Otter vehicle with velocity controller and external disturbance
+            self.otter_vehicle = OtterVehicle(
+                controlSystem='velocityControl',
+                r=1.5,  # reference value (not used in velocity control)
+                V_current=self.V_current,
+                beta_current=self.beta_current,
+                tau_X=120  # surge force
+            )
             
             # Initialize dynamics state
             self.otter_dynamics = {
@@ -228,6 +244,21 @@ class RobotOtter(ObjectBase):
             return self.state[6, 0], self.state[7, 0]
         return 0.0, 0.0
     
+    def set_current_disturbance(self, V_current, beta_current):
+        """
+        Update the external current disturbance parameters.
+        
+        Args:
+            V_current: Current speed (m/s)
+            beta_current: Current direction (deg)
+        """
+        self.V_current = V_current
+        self.beta_current = beta_current
+        
+        # Update the Otter vehicle if available
+        if self.use_full_dynamics and self.otter_vehicle is not None:
+            self.otter_vehicle.setCurrentDisturbance(V_current, beta_current)
+    
     def set_otter_state(self, x=None, y=None, psi=None, u=None, v=None, r=None):
         """
         Convenience method to set Otter USV state.
@@ -263,3 +294,28 @@ class RobotOtter(ObjectBase):
                 self.otter_dynamics['nu'][1] = v
             if r is not None:
                 self.otter_dynamics['nu'][5] = r
+    
+    @property
+    def velocity_xy(self):
+        """
+        Get the velocity in x and y directions for Otter USV.
+        
+        Converts body-fixed velocities (u, v) to world-fixed velocities (vx, vy)
+        using the current heading angle.
+        
+        Returns:
+            (2*1) np.ndarray: Velocity [vx, vy] in world frame.
+        """
+        if self.state.shape[0] >= 6:
+            # Get body-fixed velocities
+            u = self.state[3, 0]  # surge velocity
+            v = self.state[4, 0]  # sway velocity
+            psi = self.state[2, 0]  # heading angle
+            
+            # Transform to world-fixed velocities
+            vx = u * np.cos(psi) - v * np.sin(psi)
+            vy = u * np.sin(psi) + v * np.cos(psi)
+            
+            return np.array([[vx], [vy]])
+        else:
+            return np.zeros((2, 1))

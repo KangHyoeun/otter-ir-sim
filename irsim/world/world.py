@@ -42,25 +42,32 @@ class World:
         mdownsample: int = 1,
         plot: dict = dict(),
         status: str = "None",
+        size: Optional[list] = None,
         **kwargs,
     ) -> None:
         """
         Initialize the world object.
-
-        Parameters:
-            name (str): Name of the world.
-            height (float): Height of the world.
-            width (float): Width of the world.
-            step_time (float): Time interval between steps.
-            sample_time (float): Time interval between samples.
-            offset (list): Offset for the world's position.
-            control_mode (str): Control mode ('auto' or 'keyboard').
-            collision_mode (str): Collision mode ('stop', 'reactive', 'unobstructed').
-            obstacle_map: Image file for the obstacle map.
-            mdownsample (int): Downsampling factor for the obstacle map.
-            plot (dict): Plot configuration.
-            status (str): Initial simulation status.
+        
+        Args:
+            name: World name
+            height: World height (default: 10)
+            width: World width (default: 10)
+            step_time: Simulation step time
+            sample_time: Sample time
+            offset: World offset
+            control_mode: Control mode
+            collision_mode: Collision mode
+            obstacle_map: Obstacle map
+            mdownsample: Map downsampling factor
+            plot: Plot configuration
+            status: World status
+            size: World size as [width, height] (overrides width and height if provided)
+            **kwargs: Additional arguments
         """
+        # Handle size parameter - if provided, override width and height
+        if size is not None and isinstance(size, (list, tuple)) and len(size) >= 2:
+            width = float(size[0])
+            height = float(size[1])
 
         self.name = os.path.basename(name or "world").split(".")[0]
         self.height = height

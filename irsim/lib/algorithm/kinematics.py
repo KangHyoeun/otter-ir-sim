@@ -8,6 +8,14 @@ import numpy as np
 from math import cos, sin, tan
 from irsim.util.util import WrapToPi
 
+# Import Otter USV from Python Vehicle Simulator
+try:
+    from python_vehicle_simulator.vehicles.otter import otter
+    OTTER_AVAILABLE = True
+except ImportError:
+    OTTER_AVAILABLE = False
+    print("Warning: Python Vehicle Simulator not available. Otter USV dynamics will use simplified kinematics.")
+
 def differential_kinematics(
     state, velocity, step_time, noise=False, alpha=[0.03, 0, 0, 0.03]
 ):
@@ -146,6 +154,66 @@ def omni_kinematics(state, velocity, step_time, noise=False, alpha=[0.03, 0, 0, 
     return new_position
 
 
+def initialize_otter_dynamics(V_current=0.0, beta_current=0.0, control_mode="velocityControl"):
+    """
+    Initialize Otter USV dynamics with external disturbance parameters.
+    
+    Args:
+        V_current: Current speed (m/s) - default: 0.0
+        beta_current: Current direction (deg) - default: 0.0  
+        control_mode: Control system mode - default: "velocityControl"
+        
+    Returns:
+        otter_dynamics: Dictionary containing initialized Otter dynamics
+            - 'otter': otter vehicle object
+            - 'eta': 6-DOF position/orientation state [x, y, z, phi, theta, psi]
+            - 'nu': 6-DOF velocity state [u, v, w, p, q, r]
+            - 'u_actual': Propeller states [n1, n2]
+    """
+    if not OTTER_AVAILABLE:
+        return None
+        
+    # Initialize Otter USV with disturbance parameters
+    otter_vehicle = otter(
+        controlSystem=control_mode,
+        r=0,  # reference value (not used in velocity control)
+        V_current=V_current,
+        beta_current=beta_current,
+        tau_X=120  # surge force
+    )
+    
+    # Initialize states
+    eta = np.zeros(6)  # [x, y, z, phi, theta, psi]
+    nu = np.zeros(6)   # [u, v, w, p, q, r]
+    u_actual = np.zeros(2)  # [n1, n2]
+    
+    otter_dynamics = {
+        'otter': otter_vehicle,
+        'eta': eta,
+        'nu': nu,
+        'u_actual': u_actual
+    }
+    
+    return otter_dynamics
+
+
+def update_otter_disturbance(otter_dynamics, V_current, beta_current):
+    """
+    Update the external disturbance parameters for an existing Otter dynamics object.
+    
+    Args:
+        otter_dynamics: Dictionary containing Otter dynamics (from initialize_otter_dynamics)
+        V_current: Current speed (m/s)
+        beta_current: Current direction (deg)
+    """
+    if otter_dynamics is None or 'otter' not in otter_dynamics:
+        print("Warning: Invalid otter_dynamics. Cannot update disturbance.")
+        return
+        
+    otter_vehicle = otter_dynamics['otter']
+    otter_vehicle.setCurrentDisturbance(V_current, beta_current)
+
+
 def otter_usv_kinematics(state, velocity, step_time, otter_dynamics=None, noise=False, alpha=[0.03, 0, 0, 0.03]):   
     """
     Calculate the next state for an Otter USV using full 6-DOF dynamics with velocity controller.
@@ -162,11 +230,11 @@ def otter_usv_kinematics(state, velocity, step_time, otter_dynamics=None, noise=
             - u_ref: desired surge velocity (m/s)
             - r_ref: desired yaw rate (rad/s)
         step_time: Time step for simulation (s)
-        otter_dynamics: Dictionary containing Otter dynamics object and states
+        otter_dynamics: Dictionary containing Otter dynamics object and states (REQUIRED)
             - 'otter': otter vehicle object from Python Vehicle Simulator
             - 'eta': 6-DOF position/orientation state
             - 'nu': 6-DOF velocity state
-            If None, uses simplified kinematics without full dynamics
+            Must be created using initialize_otter_dynamics()
         noise: Boolean indicating whether to add noise to the velocity (default False)
         alpha: Noise parameters for velocity model (default [0.03, 0, 0, 0.03])
     
@@ -176,7 +244,8 @@ def otter_usv_kinematics(state, velocity, step_time, otter_dynamics=None, noise=
     Note:
         - For IR-SIM integration, only [x, y, psi] are used for visualization
         - Full state is maintained for accurate dynamics simulation
-        - If otter_dynamics is None, falls back to differential kinematics
+        - otter_dynamics is REQUIRED - use initialize_otter_dynamics() to create it
+        - Python Vehicle Simulator must be available for full dynamics
     """
     
     # Validate state dimensions
@@ -186,57 +255,12 @@ def otter_usv_kinematics(state, velocity, step_time, otter_dynamics=None, noise=
     if velocity.shape[0] < 2:
         raise ValueError(f"Velocity must have 2 dimensions, got {velocity.shape[0]}")
     
-    # If otter_dynamics not provided, use simplified differential kinematics
+    # Require otter_dynamics for full dynamics simulation
     if otter_dynamics is None:
-        # Simple kinematic model without full dynamics
-        if state.shape[0] < 6:
-            # Initialize extended state if needed
-            next_state = np.zeros((8, 1))
-            next_state[0:3] = state[0:3]
-        else:
-            next_state = state.copy()
-        
-        # Apply velocity commands directly (simplified)
-        u_ref = velocity[0, 0]
-        r_ref = velocity[1, 0]
-        
-        if noise:
-            std_linear = np.sqrt(
-                alpha[0] * (u_ref ** 2) + alpha[1] * (r_ref ** 2)
-            )
-            std_angular = np.sqrt(
-                alpha[2] * (u_ref ** 2) + alpha[3] * (r_ref ** 2)
-            )
-            u_ref += np.random.normal(0, std_linear)
-            r_ref += np.random.normal(0, std_angular)
-        
-        # Simple first-order response (no full dynamics)
-        if state.shape[0] >= 6:
-            # Update velocities with simple dynamics
-            tau_u = 2.0  # surge time constant (s)
-            tau_r = 1.0  # yaw time constant (s)
-            
-            next_state[3, 0] += (u_ref - state[3, 0]) / tau_u * step_time  # u
-            next_state[4, 0] = 0.0  # v (sway)
-            next_state[5, 0] += (r_ref - state[5, 0]) / tau_r * step_time  # r
-        else:
-            # Use commands directly
-            next_state[3, 0] = u_ref
-            next_state[4, 0] = 0.0
-            next_state[5, 0] = r_ref
-        
-        # Update position using current velocities
-        psi = state[2, 0]
-        u = next_state[3, 0]
-        v = next_state[4, 0]
-        r = next_state[5, 0]
-        
-        next_state[0, 0] = state[0, 0] + (u * cos(psi) - v * sin(psi)) * step_time
-        next_state[1, 0] = state[1, 0] + (u * sin(psi) + v * cos(psi)) * step_time
-        next_state[2, 0] = state[2, 0] + r * step_time
-        next_state[2, 0] = WrapToPi(next_state[2, 0])
-        
-        return next_state
+        raise ValueError("otter_dynamics is required for full Otter USV dynamics. Use initialize_otter_dynamics() to create it.")
+    
+    if not OTTER_AVAILABLE:
+        raise ImportError("Python Vehicle Simulator is not available. Cannot run full Otter USV dynamics.")
     
     # Full Otter USV dynamics with Python Vehicle Simulator
     otter = otter_dynamics['otter']

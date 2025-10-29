@@ -13,7 +13,7 @@ from shapely.strtree import STRtree
 from shapely.ops import unary_union
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 
 class Lidar2D:
     """
@@ -512,4 +512,423 @@ class Lidar2D:
         point_array = np.hstack(point_cloud)
 
         return point_array
+    
+    def extract_rvo_neighbors(self, eps: float = 0.6, min_samples: int = 5, 
+                            min_radius: float = 0.3, max_radius: float = 1.0, 
+                            velocity_history_length: int = 5,
+                            velocity_threshold: float = 0.1,
+                            max_velocity: float = 10.0,
+                            wall_boundary_threshold: float = 1.0,
+                            wall_aspect_ratio_threshold: float = 3.0,
+                            wall_min_radius: float = 1.5,
+                            wall_max_radius: float = 3.0,
+                            wall_point_spread_factor: float = 2.0,
+                            data_association_distance: float = 2.0,
+                            min_time_difference: float = 0.01,
+                            duplicate_distance_threshold: float = 0.5,
+                            circle_fit_bounds_margin: float = 2.0,
+                            confidence_points_factor: float = 10.0) -> List[List[float]]:
+        """
+        Extract RVO neighbor states from LiDAR scan data with velocity estimation.
+        
+        Args:
+            eps: Clustering distance threshold
+            min_samples: Minimum points per cluster
+            min_radius: Minimum expected radius
+            max_radius: Maximum expected radius
+            velocity_history_length: Number of previous scans for velocity estimation
+            velocity_threshold: Speed threshold (m/s) for dynamic vs static classification
+            max_velocity: Maximum realistic velocity (m/s) for filtering
+            wall_boundary_threshold: Distance from world boundary to classify as wall (m)
+            wall_aspect_ratio_threshold: Aspect ratio threshold for wall detection
+            wall_min_radius: Minimum radius for wall classification (m)
+            wall_max_radius: Maximum radius for wall classification (m)
+            wall_point_spread_factor: Factor for detecting spread-out points (wall-like)
+            data_association_distance: Maximum distance for associating objects across frames (m)
+            min_time_difference: Minimum time difference for velocity calculation (s)
+            duplicate_distance_threshold: Distance threshold for duplicate detection (m)
+            circle_fit_bounds_margin: Margin for circle fitting bounds (m)
+            confidence_points_factor: Points per confidence unit
+            
+        Returns:
+            List[List[float]]: List of RVO neighbor states [x, y, vx, vy, radius]
+        """
+        from ...lib.algorithm.lidar_processing import LidarNeighborDetector
+        
+        # Create detector instance (reuse if already exists)
+        if not hasattr(self, '_neighbor_detector'):
+            self._neighbor_detector = LidarNeighborDetector(
+                eps=eps,
+                min_samples=min_samples,
+                min_radius=min_radius,
+                max_radius=max_radius,
+                velocity_history_length=velocity_history_length,
+                velocity_threshold=velocity_threshold,
+                max_velocity=max_velocity,
+                wall_boundary_threshold=wall_boundary_threshold,
+                wall_aspect_ratio_threshold=wall_aspect_ratio_threshold,
+                wall_min_radius=wall_min_radius,
+                wall_max_radius=wall_max_radius,
+                wall_point_spread_factor=wall_point_spread_factor,
+                data_association_distance=data_association_distance,
+                min_time_difference=min_time_difference,
+                duplicate_distance_threshold=duplicate_distance_threshold,
+                circle_fit_bounds_margin=circle_fit_bounds_margin,
+                confidence_points_factor=confidence_points_factor
+            )
+        else:
+            # Update parameters if detector already exists
+            self._neighbor_detector.eps = eps
+            self._neighbor_detector.min_samples = min_samples
+            self._neighbor_detector.min_radius = min_radius
+            self._neighbor_detector.max_radius = max_radius
+            self._neighbor_detector.velocity_history_length = velocity_history_length
+            self._neighbor_detector.velocity_threshold = velocity_threshold
+            self._neighbor_detector.max_velocity = max_velocity
+            self._neighbor_detector.wall_boundary_threshold = wall_boundary_threshold
+            self._neighbor_detector.wall_aspect_ratio_threshold = wall_aspect_ratio_threshold
+            self._neighbor_detector.wall_min_radius = wall_min_radius
+            self._neighbor_detector.wall_max_radius = wall_max_radius
+            self._neighbor_detector.wall_point_spread_factor = wall_point_spread_factor
+            self._neighbor_detector.data_association_distance = data_association_distance
+            self._neighbor_detector.min_time_difference = min_time_difference
+            self._neighbor_detector.duplicate_distance_threshold = duplicate_distance_threshold
+            self._neighbor_detector.circle_fit_bounds_margin = circle_fit_bounds_margin
+            self._neighbor_detector.confidence_points_factor = confidence_points_factor
+        
+        # Extract neighbors with velocity estimation
+        neighbors = self._neighbor_detector.extract_neighbors(
+            self.range_data, self.angle_list, current_time=0.0, range_max=self.range_max
+        )
+        
+        # Convert to RVO format
+        return self._neighbor_detector.neighbors_to_rvo_format(neighbors)
+    
+    def extract_rvo_neighbors_with_time(self, current_time: float, eps: float = 0.6, 
+                                       min_samples: int = 5, min_radius: float = 0.3, 
+                                       max_radius: float = 1.0, velocity_history_length: int = 5,
+                                       world_bounds: Optional[tuple] = None,
+                                       velocity_threshold: float = 0.1,
+                                       max_velocity: float = 10.0,
+                                       wall_boundary_threshold: float = 1.0,
+                                       wall_aspect_ratio_threshold: float = 3.0,
+                                       wall_min_radius: float = 1.5,
+                                       wall_max_radius: float = 3.0,
+                                       wall_point_spread_factor: float = 2.0,
+                                       data_association_distance: float = 2.0,
+                                       min_time_difference: float = 0.01,
+                                       duplicate_distance_threshold: float = 0.5,
+                                       circle_fit_bounds_margin: float = 2.0,
+                                       confidence_points_factor: float = 10.0) -> List[List[float]]:
+        """
+        Extract RVO neighbor states from LiDAR scan data with velocity estimation using current time.
+        
+        Args:
+            current_time: Current simulation time for velocity estimation
+            eps: Clustering distance threshold
+            min_samples: Minimum points per cluster
+            min_radius: Minimum expected radius
+            max_radius: Maximum expected radius
+            velocity_history_length: Number of previous scans for velocity estimation
+            world_bounds: Optional (x_min, y_min, x_max, y_max) for wall detection
+            velocity_threshold: Speed threshold (m/s) for dynamic vs static classification
+            max_velocity: Maximum realistic velocity (m/s) for filtering
+            wall_boundary_threshold: Distance from world boundary to classify as wall (m)
+            wall_aspect_ratio_threshold: Aspect ratio threshold for wall detection
+            wall_min_radius: Minimum radius for wall classification (m)
+            wall_max_radius: Maximum radius for wall classification (m)
+            wall_point_spread_factor: Factor for detecting spread-out points (wall-like)
+            data_association_distance: Maximum distance for associating objects across frames (m)
+            min_time_difference: Minimum time difference for velocity calculation (s)
+            duplicate_distance_threshold: Distance threshold for duplicate detection (m)
+            circle_fit_bounds_margin: Margin for circle fitting bounds (m)
+            confidence_points_factor: Points per confidence unit
+            
+        Returns:
+            List[List[float]]: List of RVO neighbor states [x, y, vx, vy, radius]
+        """
+        from ...lib.algorithm.lidar_processing import LidarNeighborDetector
+        
+        # Create detector instance (reuse if already exists)
+        if not hasattr(self, '_neighbor_detector'):
+            self._neighbor_detector = LidarNeighborDetector(
+                eps=eps,
+                min_samples=min_samples,
+                min_radius=min_radius,
+                max_radius=max_radius,
+                velocity_history_length=velocity_history_length,
+                velocity_threshold=velocity_threshold,
+                max_velocity=max_velocity,
+                wall_boundary_threshold=wall_boundary_threshold,
+                wall_aspect_ratio_threshold=wall_aspect_ratio_threshold,
+                wall_min_radius=wall_min_radius,
+                wall_max_radius=wall_max_radius,
+                wall_point_spread_factor=wall_point_spread_factor,
+                data_association_distance=data_association_distance,
+                min_time_difference=min_time_difference,
+                duplicate_distance_threshold=duplicate_distance_threshold,
+                circle_fit_bounds_margin=circle_fit_bounds_margin,
+                confidence_points_factor=confidence_points_factor
+            )
+        else:
+            # Update parameters if detector already exists
+            self._neighbor_detector.eps = eps
+            self._neighbor_detector.min_samples = min_samples
+            self._neighbor_detector.min_radius = min_radius
+            self._neighbor_detector.max_radius = max_radius
+            self._neighbor_detector.velocity_history_length = velocity_history_length
+            self._neighbor_detector.velocity_threshold = velocity_threshold
+            self._neighbor_detector.max_velocity = max_velocity
+            self._neighbor_detector.wall_boundary_threshold = wall_boundary_threshold
+            self._neighbor_detector.wall_aspect_ratio_threshold = wall_aspect_ratio_threshold
+            self._neighbor_detector.wall_min_radius = wall_min_radius
+            self._neighbor_detector.wall_max_radius = wall_max_radius
+            self._neighbor_detector.wall_point_spread_factor = wall_point_spread_factor
+            self._neighbor_detector.data_association_distance = data_association_distance
+            self._neighbor_detector.min_time_difference = min_time_difference
+            self._neighbor_detector.duplicate_distance_threshold = duplicate_distance_threshold
+            self._neighbor_detector.circle_fit_bounds_margin = circle_fit_bounds_margin
+            self._neighbor_detector.confidence_points_factor = confidence_points_factor
+        
+        # Extract neighbors with velocity estimation using actual time
+        neighbors = self._neighbor_detector.extract_neighbors(
+            self.range_data, self.angle_list, current_time=current_time, world_bounds=world_bounds, range_max=self.range_max
+        )
+        
+        # Convert to RVO format (only dynamic obstacles by default)
+        return self._neighbor_detector.neighbors_to_rvo_format(neighbors, include_static=False)
+    
+    def extract_neighbors_detailed(self, eps: float = 0.2, min_samples: int = 1, 
+                                 min_radius: float = 0.05, max_radius: float = 4.0, 
+                                 velocity_history_length: int = 8,
+                                 world_bounds: Optional[tuple] = None,
+                                 velocity_threshold: float = 0.05,
+                                 max_velocity: float = 15.0,
+                                 wall_boundary_threshold: float = 0.5,
+                                 wall_aspect_ratio_threshold: float = 2.5,
+                                 wall_min_radius: float = 0.6,
+                                 wall_max_radius: float = 3.0,
+                                 wall_point_spread_factor: float = 1.3,
+                                 data_association_distance: float = 1.5,
+                                 min_time_difference: float = 0.005,
+                                 duplicate_distance_threshold: float = 0.4,
+                                 circle_fit_bounds_margin: float = 1.5,
+                                 confidence_points_factor: float = 8.0,
+                                 current_time: float = 0.0) -> List[Dict]:
+        """
+        Extract detailed neighbor information from LiDAR scan data with velocity estimation.
+        
+        Args:
+            eps: Clustering distance threshold
+            min_samples: Minimum points per cluster
+            min_radius: Minimum expected radius
+            max_radius: Maximum expected radius
+            velocity_history_length: Number of previous scans for velocity estimation
+            world_bounds: Optional (x_min, y_min, x_max, y_max) for wall detection
+            velocity_threshold: Speed threshold (m/s) for dynamic vs static classification
+            max_velocity: Maximum realistic velocity (m/s) for filtering
+            wall_boundary_threshold: Distance from world boundary to classify as wall (m)
+            wall_aspect_ratio_threshold: Aspect ratio threshold for wall detection
+            wall_min_radius: Minimum radius for wall classification (m)
+            wall_max_radius: Maximum radius for wall classification (m)
+            wall_point_spread_factor: Factor for detecting spread-out points (wall-like)
+            data_association_distance: Maximum distance for associating objects across frames (m)
+            min_time_difference: Minimum time difference for velocity calculation (s)
+            duplicate_distance_threshold: Distance threshold for duplicate detection (m)
+            circle_fit_bounds_margin: Margin for circle fitting bounds (m)
+            confidence_points_factor: Points per confidence unit
+            current_time: Current simulation time for velocity estimation
+            
+        Returns:
+            List[Dict]: List of neighbor dictionaries with keys:
+                - 'position': (x, y) tuple - ABSOLUTE coordinates in world frame
+                - 'velocity': (vx, vy) tuple - ABSOLUTE velocity in world frame
+                - 'radius': float
+                - 'confidence': float (0-1)
+                - 'type': 'wall', 'static_obstacle', 'dynamic_obstacle', or 'unknown_obstacle'
+        """
+        from ...lib.algorithm.lidar_processing import LidarNeighborDetector
+        
+        # Create detector instance (reuse if already exists)
+        if not hasattr(self, '_neighbor_detector'):
+            self._neighbor_detector = LidarNeighborDetector(
+                eps=eps,
+                min_samples=min_samples,
+                min_radius=min_radius,
+                max_radius=max_radius,
+                velocity_history_length=velocity_history_length,
+                velocity_threshold=velocity_threshold,
+                max_velocity=max_velocity,
+                wall_boundary_threshold=wall_boundary_threshold,
+                wall_aspect_ratio_threshold=wall_aspect_ratio_threshold,
+                wall_min_radius=wall_min_radius,
+                wall_max_radius=wall_max_radius,
+                wall_point_spread_factor=wall_point_spread_factor,
+                data_association_distance=data_association_distance,
+                min_time_difference=min_time_difference,
+                duplicate_distance_threshold=duplicate_distance_threshold,
+                circle_fit_bounds_margin=circle_fit_bounds_margin,
+                confidence_points_factor=confidence_points_factor
+            )
+        else:
+            # Update parameters if detector already exists
+            self._neighbor_detector.eps = eps
+            self._neighbor_detector.min_samples = min_samples
+            self._neighbor_detector.min_radius = min_radius
+            self._neighbor_detector.max_radius = max_radius
+            self._neighbor_detector.velocity_history_length = velocity_history_length
+            self._neighbor_detector.velocity_threshold = velocity_threshold
+            self._neighbor_detector.max_velocity = max_velocity
+            self._neighbor_detector.wall_boundary_threshold = wall_boundary_threshold
+            self._neighbor_detector.wall_aspect_ratio_threshold = wall_aspect_ratio_threshold
+            self._neighbor_detector.wall_min_radius = wall_min_radius
+            self._neighbor_detector.wall_max_radius = wall_max_radius
+            self._neighbor_detector.wall_point_spread_factor = wall_point_spread_factor
+            self._neighbor_detector.data_association_distance = data_association_distance
+            self._neighbor_detector.min_time_difference = min_time_difference
+            self._neighbor_detector.duplicate_distance_threshold = duplicate_distance_threshold
+            self._neighbor_detector.circle_fit_bounds_margin = circle_fit_bounds_margin
+            self._neighbor_detector.confidence_points_factor = confidence_points_factor
+        
+        # Get LiDAR sensor's absolute position and velocity
+        lidar_position = None
+        lidar_velocity = None
+        lidar_orientation = None
+        
+        if hasattr(self, '_state') and self._state is not None:
+            # Get LiDAR position in world coordinates
+            lidar_position = (self.lidar_origin[0, 0], self.lidar_origin[1, 0])
+            
+            # Get LiDAR orientation (if available)
+            if self.lidar_origin.shape[0] > 2:
+                lidar_orientation = self.lidar_origin[2, 0]
+        
+        # Extract neighbors with absolute coordinate transformation
+        return self._neighbor_detector.extract_neighbors(
+            self.range_data, self.angle_list, 
+            current_time=current_time, 
+            world_bounds=world_bounds,
+            lidar_position=lidar_position,
+            lidar_velocity=lidar_velocity,
+            lidar_orientation=lidar_orientation,
+            range_max=self.range_max
+        )
+    
+    def extract_neighbors_detailed_with_robot_velocity(self, robot_velocity: Tuple[float, float], 
+                                                      eps: float = 0.2, min_samples: int = 1, 
+                                                      min_radius: float = 0.05, max_radius: float = 4.0, 
+                                                      velocity_history_length: int = 8,
+                                                      world_bounds: Optional[tuple] = None,
+                                                      velocity_threshold: float = 0.05,
+                                                      max_velocity: float = 15.0,
+                                                      wall_boundary_threshold: float = 0.5,
+                                                      wall_aspect_ratio_threshold: float = 2.5,
+                                                      wall_min_radius: float = 0.6,
+                                                      wall_max_radius: float = 3.0,
+                                                      wall_point_spread_factor: float = 1.3,
+                                                      data_association_distance: float = 1.5,
+                                                      min_time_difference: float = 0.005,
+                                                      duplicate_distance_threshold: float = 0.4,
+                                                      circle_fit_bounds_margin: float = 1.5,
+                                                      confidence_points_factor: float = 8.0,
+                                                      current_time: float = 0.0) -> List[Dict]:
+        """
+        Extract detailed neighbor information with robot velocity for absolute coordinate transformation.
+        
+        Args:
+            robot_velocity: (vx, vy) absolute velocity of the robot carrying the LiDAR
+            eps: Clustering distance threshold
+            min_samples: Minimum points per cluster
+            min_radius: Minimum expected radius
+            max_radius: Maximum expected radius
+            velocity_history_length: Number of previous scans for velocity estimation
+            world_bounds: Optional (x_min, y_min, x_max, y_max) for wall detection
+            velocity_threshold: Speed threshold (m/s) for dynamic vs static classification
+            max_velocity: Maximum realistic velocity (m/s) for filtering
+            wall_boundary_threshold: Distance from world boundary to classify as wall (m)
+            wall_aspect_ratio_threshold: Aspect ratio threshold for wall detection
+            wall_min_radius: Minimum radius for wall classification (m)
+            wall_max_radius: Maximum radius for wall classification (m)
+            wall_point_spread_factor: Factor for detecting spread-out points (wall-like)
+            data_association_distance: Maximum distance for associating objects across frames (m)
+            min_time_difference: Minimum time difference for velocity calculation (s)
+            duplicate_distance_threshold: Distance threshold for duplicate detection (m)
+            circle_fit_bounds_margin: Margin for circle fitting bounds (m)
+            confidence_points_factor: Points per confidence unit
+            current_time: Current simulation time for velocity estimation
+            
+        Returns:
+            List[Dict]: List of neighbor dictionaries with keys:
+                - 'position': (x, y) tuple - ABSOLUTE coordinates in world frame
+                - 'velocity': (vx, vy) tuple - ABSOLUTE velocity in world frame
+                - 'radius': float
+                - 'confidence': float (0-1)
+                - 'type': 'wall', 'static_obstacle', 'dynamic_obstacle', or 'unknown_obstacle'
+        """
+        from ...lib.algorithm.lidar_processing import LidarNeighborDetector
+        
+        # Create detector instance (reuse if already exists)
+        if not hasattr(self, '_neighbor_detector'):
+            self._neighbor_detector = LidarNeighborDetector(
+                eps=eps,
+                min_samples=min_samples,
+                min_radius=min_radius,
+                max_radius=max_radius,
+                velocity_history_length=velocity_history_length,
+                velocity_threshold=velocity_threshold,
+                max_velocity=max_velocity,
+                wall_boundary_threshold=wall_boundary_threshold,
+                wall_aspect_ratio_threshold=wall_aspect_ratio_threshold,
+                wall_min_radius=wall_min_radius,
+                wall_max_radius=wall_max_radius,
+                wall_point_spread_factor=wall_point_spread_factor,
+                data_association_distance=data_association_distance,
+                min_time_difference=min_time_difference,
+                duplicate_distance_threshold=duplicate_distance_threshold,
+                circle_fit_bounds_margin=circle_fit_bounds_margin,
+                confidence_points_factor=confidence_points_factor
+            )
+        else:
+            # Update parameters if detector already exists
+            self._neighbor_detector.eps = eps
+            self._neighbor_detector.min_samples = min_samples
+            self._neighbor_detector.min_radius = min_radius
+            self._neighbor_detector.max_radius = max_radius
+            self._neighbor_detector.velocity_history_length = velocity_history_length
+            self._neighbor_detector.velocity_threshold = velocity_threshold
+            self._neighbor_detector.max_velocity = max_velocity
+            self._neighbor_detector.wall_boundary_threshold = wall_boundary_threshold
+            self._neighbor_detector.wall_aspect_ratio_threshold = wall_aspect_ratio_threshold
+            self._neighbor_detector.wall_min_radius = wall_min_radius
+            self._neighbor_detector.wall_max_radius = wall_max_radius
+            self._neighbor_detector.wall_point_spread_factor = wall_point_spread_factor
+            self._neighbor_detector.data_association_distance = data_association_distance
+            self._neighbor_detector.min_time_difference = min_time_difference
+            self._neighbor_detector.duplicate_distance_threshold = duplicate_distance_threshold
+            self._neighbor_detector.circle_fit_bounds_margin = circle_fit_bounds_margin
+            self._neighbor_detector.confidence_points_factor = confidence_points_factor
+        
+        # Get LiDAR sensor's absolute position and velocity
+        lidar_position = None
+        lidar_velocity = robot_velocity  # Use provided robot velocity
+        lidar_orientation = None
+        
+        if hasattr(self, '_state') and self._state is not None:
+            # Get LiDAR position in world coordinates
+            lidar_position = (self.lidar_origin[0, 0], self.lidar_origin[1, 0])
+            
+            # Get LiDAR orientation (if available)
+            if self.lidar_origin.shape[0] > 2:
+                lidar_orientation = self.lidar_origin[2, 0]
+        
+        # Extract neighbors with absolute coordinate transformation
+        return self._neighbor_detector.extract_neighbors(
+            self.range_data, self.angle_list, 
+            current_time=current_time, 
+            world_bounds=world_bounds,
+            lidar_position=lidar_position,
+            lidar_velocity=lidar_velocity,
+            lidar_orientation=lidar_orientation,
+            range_max=self.range_max
+        )
     

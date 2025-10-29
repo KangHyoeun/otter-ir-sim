@@ -1,0 +1,53 @@
+world:
+  size: [20, 20]
+
+robot:
+  - name: "robot_main"
+    shape:
+      radius: 0.3
+    kinematics:
+      name: "omni"
+    state: [2, 2, 0]
+    velocity: [1, 0.5]
+    goal: [15, 15]
+    behavior:
+      name: "dash"
+    sensors:
+      - name: "lidar2d"
+        range_max: 8
+        number: 180
+        angle_range: 6.28
+        noise: true
+        std: 0.1
+
+obstacle:
+  - name: "static_obstacle_1"
+    shape:
+      radius: 0.5
+    state: [8, 5]
+    static: true
+    color: "blue"
+    
+  - name: "dynamic_obstacle_1"
+    shape:
+      radius: 0.4
+    kinematics:
+      name: "omni"
+    state: [12, 8]
+    velocity: [-0.5, 0.3]
+    goal: [5, 12]
+    behavior:
+      name: "dash"
+    color: "red"
+    
+  - name: "dynamic_obstacle_2"
+    shape:
+      radius: 0.3
+    kinematics:
+      name: "omni"
+    state: [6, 12]
+    velocity: [0.8, -0.2]
+    goal: [14, 6]
+    behavior:
+      name: "dash"
+    color: "green"

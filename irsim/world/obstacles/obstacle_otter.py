@@ -42,6 +42,8 @@ class ObstacleOtter(ObjectBase):
         color (str): Color of the obstacle. Defaults to "k" (black).
         state_dim (int): State dimension. Defaults to 8 for extended Otter state.
         use_full_dynamics (bool): Whether to use full 6-DOF dynamics. Defaults to True.
+        V_current (float): External current speed (m/s) - default: 0.0
+        beta_current (float): External current direction (deg) - default: 0.0
         **kwargs: Additional arguments passed to ObjectBase.
         
     Example:
@@ -52,11 +54,13 @@ class ObstacleOtter(ObjectBase):
         ...     goal=[90, 90, 0],
         ...     behavior={'name': 'dash'},
         ...     color='r',
-        ...     use_full_dynamics=True
+        ...     use_full_dynamics=True,
+        ...     V_current=1.5,  # 1.5 m/s current
+        ...     beta_current=90  # 90 degrees current direction
         ... )
     """
     
-    def __init__(self, color="k", state_dim=8, use_full_dynamics=True, **kwargs):
+    def __init__(self, color="k", state_dim=8, use_full_dynamics=True, V_current=0.0, beta_current=0.0, **kwargs):
         """
         Initialize Otter USV obstacle.
         
@@ -64,12 +68,18 @@ class ObstacleOtter(ObjectBase):
             color (str): Color of the obstacle
             state_dim (int): State dimension (default 8 for Otter)
             use_full_dynamics (bool): Whether to use full 6-DOF dynamics
+            V_current (float): External current speed (m/s) - default: 0.0
+            beta_current (float): External current direction (deg) - default: 0.0
             **kwargs: Additional arguments for ObjectBase
         """
         # Initialize Otter dynamics BEFORE parent init (like RobotOtter)
         self.use_full_dynamics = use_full_dynamics and FULL_DYNAMICS_AVAILABLE
         self.otter_vehicle = None
         self.otter_dynamics = None
+        
+        # Store external disturbance parameters
+        self.V_current = V_current
+        self.beta_current = beta_current
         
         if self.use_full_dynamics:
             self._init_otter_dynamics_pre()
@@ -134,8 +144,14 @@ class ObstacleOtter(ObjectBase):
         Same as RobotOtter.
         """
         try:
-            # Create Otter vehicle with velocity controller
-            self.otter_vehicle = OtterVehicle('velocityControl', r=1.5)
+            # Create Otter vehicle with velocity controller and external disturbance
+            self.otter_vehicle = OtterVehicle(
+                controlSystem='velocityControl',
+                r=1.5,  # reference value (not used in velocity control)
+                V_current=self.V_current,
+                beta_current=self.beta_current,
+                tau_X=120  # surge force
+            )
             
             # Initialize dynamics state
             self.otter_dynamics = {
@@ -221,3 +237,18 @@ class ObstacleOtter(ObjectBase):
         if self.state.shape[0] >= 8:
             return self.state[6, 0], self.state[7, 0]
         return 0.0, 0.0
+    
+    def set_current_disturbance(self, V_current, beta_current):
+        """
+        Update the external current disturbance parameters.
+        
+        Args:
+            V_current: Current speed (m/s)
+            beta_current: Current direction (deg)
+        """
+        self.V_current = V_current
+        self.beta_current = beta_current
+        
+        # Update the Otter vehicle if available
+        if self.use_full_dynamics and self.otter_vehicle is not None:
+            self.otter_vehicle.setCurrentDisturbance(V_current, beta_current)

@@ -1,0 +1,55 @@
+
+# LiDAR RVO Test World
+world:
+  size: [20, 20]
+  collision_mode: "reactive"
+
+# Main robot with LiDAR
+robot:
+  - name: "robot_main"
+    shape:
+      name: "circle"
+      radius: 0.3
+    kinematics:
+      name: "omni"
+    state: [2, 2, 0]
+    velocity: [0, 0]
+    goal: [15, 15, 0]
+    behavior:
+      name: "dash"
+    sensors:
+      - name: "lidar2d"
+        range_max: 12
+        number: 200
+        angle_range: 6.28
+        noise: false
+    color: "blue"
+
+# No static obstacles - only dynamic ones for velocity testing
+
+# Additional robots (moving obstacles)
+  - name: "robot2"
+    shape:
+      name: "circle"
+      radius: 0.4
+    kinematics:
+      name: "omni"
+    state: [5, 3, 0]
+    velocity: [0.3, 0.2]
+    goal: [8, 8, 0]
+    behavior:
+      name: "dash"
+    color: "purple"
+    
+  - name: "robot3"
+    shape:
+      name: "circle"
+      radius: 0.35
+    kinematics:
+      name: "omni"
+    state: [3, 5, 0]
+    velocity: [-0.2, 0.4]
+    goal: [6, 9, 0]
+    behavior:
+      name: "dash"
+    color: "brown"

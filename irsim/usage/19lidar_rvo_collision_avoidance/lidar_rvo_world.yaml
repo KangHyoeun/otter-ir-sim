@@ -1,0 +1,71 @@
+
+# LiDAR-Based RVO Collision Avoidance World
+world:
+  size: [20, 20]
+  collision_mode: "reactive"
+
+# Main robot with LiDAR and RVO behavior
+robot:
+  - name: "robot_main"
+    shape:
+      name: "circle"
+      radius: 0.3
+    kinematics:
+      name: "omni"
+    state: [2, 2, 0]
+    velocity: [0, 0]
+    goal: [18, 18, 0]
+    behavior:
+      name: "dash"
+    sensors:
+      - name: "lidar2d"
+        range_max: 8
+        number: 180
+        angle_range: 6.28
+        noise: false
+    color: "blue"
+
+# Moving obstacles (unknown to the robot)
+  - name: "robot2"
+    shape:
+      name: "circle"
+      radius: 0.4
+    kinematics:
+      name: "omni"
+    state: [8, 4, 0]
+    velocity: [0.2, 0.3]
+    goal: [4, 12, 0]
+    behavior:
+      name: "dash"
+    color: "red"
+    
+  - name: "robot3"
+    shape:
+      name: "circle"
+      radius: 0.35
+    kinematics:
+      name: "omni"
+    state: [6, 8, 0]
+    velocity: [-0.3, 0.2]
+    goal: [12, 6, 0]
+    behavior:
+      name: "dash"
+    color: "green"
+
+# Static obstacles
+obstacle:
+  - name: "obs1"
+    shape:
+      name: "circle"
+      radius: 0.5
+    state: [10, 10, 0]
+    color: "orange"
+    static: true
+    
+  - name: "obs2"
+    shape:
+      name: "circle"
+      radius: 0.4
+    state: [14, 6, 0]
+    color: "purple"
+    static: true

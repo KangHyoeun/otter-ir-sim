@@ -6,7 +6,7 @@ world:
   offset: [0, 0] # the offset of the world on x and y 
   control_mode: 'auto' # auto, keyboard
   collision_mode: 'stop' # stop, reactive, unobstructed, unobstructed_obstacles
-  obstacle_map: null # the obstacle map
+  obstacle_map: 'cave.png' # the obstacle map
 
   
   

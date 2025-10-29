@@ -1,6 +1,6 @@
 import irsim
 
-env = irsim.make()   
+env = irsim.make('otter_dynamic_random.yaml')   
 
 for i in range(1000):
 
